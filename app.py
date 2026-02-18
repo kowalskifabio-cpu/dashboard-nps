@@ -35,31 +35,34 @@ def load_data():
         st.error(f"Erro ao carregar dados: {e}")
         return pd.DataFrame()
 
-df = load_data()
-
-# 3. Barra Lateral (Filtros Estratégicos conforme imagem)
-with st.sidebar:
-    st.image("Logo Escrita.png", width=180)
-    st.markdown("### Filtros Estratégicos")
-    
-    if not df.empty:
-        # Filtro de Empresa/Cliente
-        clientes = ["Todas"] + sorted(df['cliente'].unique().tolist())
-        filtro_cliente = st.selectbox("Empresa", clientes)
+def load_data():
+    try:
+        scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
+        client = gspread.authorize(creds)
+        sh = client.open_by_key(st.secrets["SHEET_ID"])
+        worksheet = sh.worksheet("respostas")
         
-        # Filtro de Setor
-        setores = ["Todos"] + sorted(df['setor'].unique().tolist())
-        filtro_setor = st.selectbox("Setor", setores)
+        # MUDANÇA AQUI: Lemos os dados brutos e limpamos colunas vazias antes de processar
+        data = worksheet.get_all_values()
+        if not data:
+            return pd.DataFrame()
+            
+        # Transforma em tabela (DataFrame) usando a primeira linha como cabeçalho
+        df = pd.DataFrame(data[1:], columns=data[0])
         
-        # Lógica de Filtro
-        if filtro_cliente != "Todas":
-            df = df[df['cliente'] == filtro_cliente]
-        if filtro_setor != "Todos":
-            df = df[df['setor'] == filtro_setor]
-
-    st.markdown("---")
-    st.button("🔄 Atualizar Dados")
-
+        # Remove colunas que não têm nome (previne o erro de duplicatas vazias)
+        df = df.loc[:, df.columns != '']
+        
+        # Converte as colunas de notas para números (senão os gráficos não funcionam)
+        colunas_notas = ['clareza', 'prazos', 'comunicacao', 'atendimento', 'custo', 'nps_score']
+        for col in colunas_notas:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            
+        return df
+    except Exception as e:
+        st.error(f"Erro ao carregar dados: {e}")
+        return pd.DataFrame()
 # 4. Conteúdo Principal
 if df.empty:
     st.info("Aguardando os primeiros dados da pesquisa para gerar o Dashboard.")
